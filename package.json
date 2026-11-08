@@ -1,0 +1,27 @@
+{
+  "name": "opencode-tmux-status",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Live per-window tmux indicators for OpenCode V2",
+  "exports": {
+    "./tui": "./src/tui.ts"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@opencode/plugin": ">=2.2.6 <3",
+    "solid-js": "^1.9.0"
+  },
+  "devDependencies": {
+    "@opencode/plugin": "2.2.6",
+    "@types/node": "^24.0.0",
+    "solid-js": "^1.9.0",
+    "typescript": "~5.9.3"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
