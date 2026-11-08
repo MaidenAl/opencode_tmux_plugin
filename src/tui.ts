@@ -1,7 +1,7 @@
 import { Plugin } from "@opencode/plugin/tui";
 import { createEffect } from "solid-js";
 import type { Status } from "./status.ts";
-import { TmuxStatus, targetFromEnvironment } from "./tmux.ts";
+import { TmuxStatus, targetFromEnvironment, REFRESH_MS, HEARTBEAT_MS } from "./tmux.ts";
 import { openRoots, viewStatus } from "./view.ts";
 
 export default Plugin.define({
@@ -77,8 +77,14 @@ export default Plugin.define({
       },
     });
 
-    // Only the lease/spinner needs a timer; agent state comes from reactive event data.
-    const heartbeat = setInterval(() => void publish(), 1000);
+    // Animate working sessions quickly; idle sessions only need their lease renewed.
+    let nextHeartbeat = 0;
+    const heartbeat = setInterval(() => {
+      const now = Date.now();
+      if (status !== "working" && now < nextHeartbeat) return;
+      nextHeartbeat = now + HEARTBEAT_MS;
+      void publish();
+    }, REFRESH_MS);
     heartbeat.unref();
     return async () => {
       stopped = true;

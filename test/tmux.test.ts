@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
-import { execFile } from "node:child_process";
+import { execFile, spawn } from "node:child_process";
+import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { test, type TestContext } from "node:test";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { TmuxStatus, targetFromEnvironment, FORMAT_TOKEN, LEASE_SECONDS } from "../src/tmux.ts";
 
@@ -46,7 +48,7 @@ test("formats preserve names/styles, install once, and stay blank in unrelated w
   assert.equal(await f.tmux("display-message", "-p", "-t", f.pane,
     "#{T:window-status-current-format}"), "✓LOCAL Agents");
   await bridge.publish("working");
-  assert.match(await f.label(), /^[⠋⠙⠹⠸]#\[fg=blue\]0:Agents\*$/u);
+  assert.match(await f.label(), /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]#\[fg=blue\]0:Agents\*$/u);
   assert.equal(await f.tmux("show-options", "-gwqv", "window-status-format"), FORMAT_TOKEN + base);
   const other = await f.tmux("new-window", "-d", "-n", "Unrelated", "-P", "-F", "#{pane_id}", "sleep 300");
   assert.equal(await f.label(other), "#[fg=blue]1:Unrelated");
@@ -61,7 +63,7 @@ test("every pane contributes and indicators automatically follow pane moves", as
   const secondBridge = await TmuxStatus.connect({ socket: f.socket, pane: second });
   await firstBridge.publish("done");
   await secondBridge.publish("working");
-  assert.match(await f.label(), /^[⠋⠙⠹⠸]0:Agents/u);
+  assert.match(await f.label(), /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]0:Agents/u);
   await secondBridge.publish("attention");
   assert.match(await f.label(), /^!0:Agents/u);
   const destination = await f.tmux("new-window", "-d", "-n", "Moved", "-P", "-F", "#{pane_id}", "sleep 300");
@@ -71,7 +73,7 @@ test("every pane contributes and indicators automatically follow pane moves", as
   await f.tmux("rename-window", "-t", destination, "Renamed");
   assert.match(await f.label(destination), /^!1:Renamed/u);
   await secondBridge.close();
-  assert.doesNotMatch(await f.label(destination), /[!✓⠋⠙⠹⠸]/u);
+  assert.doesNotMatch(await f.label(destination), /[!✓⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/u);
   await firstBridge.close();
 });
 
@@ -82,7 +84,7 @@ test("expired heartbeats cannot leave a false busy or finished indicator", async
     await bridge.publish(status);
     await f.tmux("set-option", "-p", "-t", f.pane, "@opencode_tmux_heartbeat",
       String(Math.floor(Date.now() / 1000) - LEASE_SECONDS - 1));
-    assert.doesNotMatch(await f.label(), /[!✓✗⠋⠙⠹⠸]/u);
+    assert.doesNotMatch(await f.label(), /[!✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/u);
   }
   await bridge.close();
 });
@@ -140,4 +142,60 @@ test("uninstall removes only plugin-owned formatting and pane options", async (t
   assert.equal(await f.tmux("show-options", "-wqv", "-t", f.pane, "window-status-current-format"), local);
   assert.equal(await f.tmux("show-options", "-pqv", "-t", f.pane, "@user_setting"), "keep me");
   assert.equal(await f.tmux("show-options", "-gqv", "@opencode_tmux_badge"), "");
+  assert.equal(await f.tmux("show-options", "-gqv", "@opencode_tmux_spinner"), "");
+});
+
+test("working frames advance every 200ms independently of tmux's seconds clock", async (t) => {
+  const f = await fixture(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const bridge = await TmuxStatus.connect({ socket: f.socket, pane: f.pane });
+  const frames = new Set<string>();
+  for (let i = 0; i < 5; i++) {
+    await bridge.publish("working");
+    const frame = await f.tmux("show-options", "-gqv", "@opencode_tmux_spinner");
+    assert.match(frame, /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]$/u);
+    frames.add(frame);
+    t.mock.timers.tick(200);
+  }
+  assert.equal(frames.size, 5);
+  await bridge.close();
+});
+
+test("theme reloads are still repaired on the one-second maintenance tick", async (t) => {
+  const f = await fixture(t);
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const bridge = await TmuxStatus.connect({ socket: f.socket, pane: f.pane });
+  await f.tmux("set-option", "-gw", "window-status-format", "EDIT #I:#W");
+  t.mock.timers.tick(1000);
+  await bridge.publish("working");
+  assert.equal(await f.tmux("show-options", "-gwqv", "window-status-format"), FORMAT_TOKEN + "EDIT #I:#W");
+  await bridge.close();
+});
+
+test("an attached terminal actually redraws sub-second spinner frames", { timeout: 10_000 }, async (t) => {
+  const f = await fixture(t);
+  const socket = "'" + f.socket.replaceAll("'", "'\\''") + "'";
+  const client = spawn("script", ["-q", "-c", `tmux -S ${socket} attach-session -t plugin-test`, "/dev/null"], {
+    env: { ...process.env, TMUX: "", TERM: "xterm-256color" },
+  });
+  t.after(() => { client.kill("SIGTERM"); });
+  let output = "";
+  client.stdout.setEncoding("utf8").on("data", (text: string) => { output += text; });
+  client.stderr.setEncoding("utf8").on("data", (text: string) => { output += text; });
+  await once(client, "spawn");
+  for (let i = 0; i < 50; i++) {
+    if (await f.tmux("list-clients", "-F", "#{client_name}")) break;
+    await delay(20);
+  }
+  assert.ok(await f.tmux("list-clients", "-F", "#{client_name}"), "The isolated terminal attached");
+  t.mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  const bridge = await TmuxStatus.connect({ socket: f.socket, pane: f.pane });
+  for (let i = 0; i < 8; i++) {
+    await bridge.publish("working");
+    await delay(50);
+    t.mock.timers.tick(200);
+  }
+  const frames = new Set(output.match(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/gu));
+  assert.ok(frames.size >= 4, `Expected visible animation; received ${frames.size} frames`);
+  await bridge.close();
 });

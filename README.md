@@ -9,7 +9,7 @@ names, screen scraping, monitoring daemon, or model/API calls.
 
 | Indicator | Meaning |
 | --- | --- |
-| `⠋ ⠙ ⠹ ⠸` | Working; spinner advances once a second |
+| `⠋` (animated) | Working; spinner advances every 200 ms (five updates per second) |
 | `!` | Waiting for a permission or an answer |
 | `✗` | The latest execution failed |
 | `✓` | Execution finished; stays until the next run |
@@ -38,8 +38,8 @@ Add this folder to the existing `plugins` array in
 reloads automatically; `/reload` can force a reload. No server restart is needed.
 Launch OpenCode normally inside tmux. Outside tmux, this plugin does nothing.
 
-**Development did not enable the plugin in your `Main` session or edit your
-global configuration.** The path above is the remaining opt-in step.
+Enabling it here applies globally for your user; no project configuration is
+necessary.
 
 ## What is tracked
 
@@ -56,12 +56,16 @@ global configuration.** The path above is the remaining opt-in step.
 
 ## How tmux integration works
 
-The TUI's reactive session data drives state changes immediately. A one-second
-heartbeat renews a **five-second pane lease**, animates the spinner, and refreshes
-attached clients. It does not poll session status or inspect terminal output.
+The TUI's reactive session data drives state changes immediately. While working,
+the spinner and attached clients refresh every **200 ms**; idle sessions only
+renew their **five-second pane lease** once a second. Theme checks and client
+discovery remain on a one-second maintenance interval, not every animation
+frame. Updates and client refreshes share a single tmux command invocation per
+frame. The plugin does not poll session status or inspect terminal output.
 
-Pane options hold only a fixed state, timestamp, and reload-ownership token; no
-prompts, session titles, file contents, or credentials are written to tmux.
+tmux options hold only a fixed state, spinner glyph, timestamp, and
+reload-ownership token; no prompts, session titles, file contents, or credentials
+are written to tmux.
 Socket paths and pane IDs come from `TMUX` / `TMUX_PANE`. Commands use argument
 arrays, not shell interpolation.
 
@@ -99,7 +103,8 @@ options; it preserves the rest of your formatting. Nothing is persisted in
 
 ## Development / verification
 
-Node.js 24 and npm 11.17.0 are used for development; tmux must be on `PATH`.
+Node.js 24 and npm 11.17.0 are used for development; tmux and the Linux `script`
+utility (util-linux) must be on `PATH`.
 Dependency lifecycle scripts are disabled by `.npmrc`.
 
 ```sh
@@ -113,7 +118,7 @@ npm run test:runtime
   tabs, nested subagents, and clearing old child failures.
 - Integration tests create private tmux sockets under `/tmp/opencode`, verifying
   multiple panes, pane moves/renames, format preservation, lease expiry,
-  reload ownership, and removal.
+  reload ownership, removal, and actual sub-second redraws in an attached terminal.
 - The runtime test requires `opencode` and Linux `ps` on `PATH`. It copies only
   the distributable (no `node_modules`), launches a real OpenCode server/TUI in a
   private tmux session, uses separate HOME/XDG directories, and supplies a local

@@ -137,6 +137,15 @@ test("real OpenCode TUI observes execution, child agents, questions, and errors"
 
     await prompt(root.id);
     await until("working indicator", state, (value) => value === "working");
+    const frames = new Set<string>();
+    for (let i = 0; i < 15; i++) {
+      const frame = await tmux("show-options", "-gqv", "@opencode_tmux_spinner");
+      assert.match(frame, /^[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]$/u);
+      frames.add(frame);
+      await delay(100);
+    }
+    assert.ok(frames.size >= 5, `Expected sub-second animation, observed ${frames.size} frames`);
+    t.diagnostic(`Sub-second spinner: observed ${frames.size} distinct working frames`);
     finish();
     await until("finished indicator", state, (value) => value === "done");
     t.diagnostic("Real execution: idle → working → done");
@@ -187,7 +196,7 @@ test("real OpenCode TUI observes execution, child agents, questions, and errors"
     assert.ok(childPID, "Only kill the OpenCode child of this isolated test pane");
     process.kill(Number(childPID), "SIGKILL");
     await until("crash lease expires", () => tmux("display-message", "-p", "-t", pane,
-      "#{T:window-status-format}"), (label) => !/[!✓✗⠋⠙⠹⠸]/u.test(label));
+      "#{T:window-status-format}"), (label) => !/[!✓✗⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏]/u.test(label));
     t.diagnostic("An actual SIGKILL cannot leave a stale window indicator");
   } catch (error) {
     t.diagnostic(redact((await tmux("capture-pane", "-p", "-t", serverPane).catch(String)).slice(-2000)));

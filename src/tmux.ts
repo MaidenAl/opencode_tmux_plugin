@@ -6,14 +6,18 @@ import type { Status } from "./status.ts";
 
 const exec = promisify(execFile);
 export const LEASE_SECONDS = 5;
+export const REFRESH_MS = 200;
+export const HEARTBEAT_MS = 1000;
 export const FORMAT_TOKEN = "#{T:@opencode_tmux_badge}";
 const STATE = "@opencode_tmux_state";
 const HEARTBEAT = "@opencode_tmux_heartbeat";
 const OWNER = "@opencode_tmux_owner";
+const SPINNER = "@opencode_tmux_spinner";
+const FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏";
 
 // T: evaluates %s at render time. P: aggregates every pane, not just the active one.
 const liveStates = `#{P:#{?#{&&:#{!=:#{pane_dead},1},#{e|>=:#{${HEARTBEAT}},#{e|-:%s,${LEASE_SECONDS}}}},#{${STATE}},}}`;
-const spinner = "#{?#{==:#{e|%%:%s,4},0},⠋,#{?#{==:#{e|%%:%s,4},1},⠙,#{?#{==:#{e|%%:%s,4},2},⠹,⠸}}}";
+const spinner = `#{${SPINNER}}`;
 const BADGE = [
   ["done", "✓"], ["error", "✗"], ["working", spinner], ["attention", "!"],
 ].reduce((rest, [status, icon]) => `#{?#{m:*${status}*,${liveStates}},${icon},${rest}}`, "");
@@ -35,6 +39,8 @@ export class TmuxStatus {
   private readonly owner = randomUUID();
   private pending = Promise.resolve();
   private closed = false;
+  private nextMaintenance = 0;
+  private clients: string[] = [];
 
   private constructor(target: TmuxTarget) {
     if (!isAbsolute(target.socket) || !/^%\d+$/.test(target.pane)) {
@@ -69,6 +75,7 @@ export class TmuxStatus {
       }
     }
     await bridge.run("set-option", "-gqu", "@opencode_tmux_badge");
+    await bridge.run("set-option", "-gqu", SPINNER);
     await bridge.refresh();
   }
 
@@ -106,13 +113,20 @@ export class TmuxStatus {
       return Promise.reject(new Error("Invalid OpenCode status"));
     }
     this.pending = this.pending.catch(() => {}).then(async () => {
-      await this.ensureFormats();
+      const now = Date.now();
+      if (now >= this.nextMaintenance) {
+        await this.ensureFormats();
+        const clients = await this.run("list-clients", "-F", "#{client_name}");
+        this.clients = clients.split("\n").filter(Boolean);
+        this.nextMaintenance = now + HEARTBEAT_MS;
+      }
       const { pane } = this.target;
-      const heartbeat = Math.floor(Date.now() / 1000);
+      const heartbeat = Math.floor(now / 1000);
+      const frame = FRAMES[Math.floor(now / REFRESH_MS) % FRAMES.length];
       // -F runs tmux commands, never a shell. The owner token also guards hot reloads.
       await this.run("if-shell", "-F", "-t", pane, `#{==:#{${OWNER}},${this.owner}}`,
-        `set-option -p -t ${pane} ${STATE} ${status}; set-option -p -t ${pane} ${HEARTBEAT} ${heartbeat}`);
-      await this.refresh();
+        `set-option -p -t ${pane} ${STATE} ${status}; set-option -p -t ${pane} ${HEARTBEAT} ${heartbeat}; set-option -g ${SPINNER} ${frame}`,
+        ...this.clients.flatMap((client) => [";", "refresh-client", "-S", "-t", client]));
     });
     return this.pending;
   }

@@ -1,7 +1,7 @@
 # Security notes
 
-The plugin publishes only a fixed state, heartbeat timestamp, and owner token
-to its own tmux socket. It does not read agent transcripts, access credentials,
+The plugin publishes only a fixed state, spinner glyph, heartbeat timestamp,
+and owner token to its own tmux socket. It does not read agent transcripts, access credentials,
 call a model, or send telemetry. Pane IDs/statuses are validated; subprocesses
 use `execFile` with a bounded timeout. `if-shell -F` evaluates a tmux format and
 executes fixed tmux commands, not a system shell.
