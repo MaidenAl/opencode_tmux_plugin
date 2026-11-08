@@ -50,6 +50,28 @@ export class TmuxStatus {
     return bridge;
   }
 
+  static async uninstall(target: TmuxTarget): Promise<void> {
+    const bridge = new TmuxStatus(target);
+    const windows = new Set((await bridge.run("list-windows", "-a", "-F", "#{window_id}")).split("\n"));
+    const scopes = [["-gw"], ...[...windows].map((id) => ["-w", "-t", id])];
+    for (const scope of scopes) {
+      for (const option of ["window-status-format", "window-status-current-format"]) {
+        const format = await bridge.run("show-options", ...scope, "-qv", option);
+        if (format.includes(FORMAT_SUFFIX)) {
+          await bridge.run("set-option", ...scope, option, format.replaceAll(FORMAT_SUFFIX, ""));
+        }
+      }
+    }
+    const panes = (await bridge.run("list-panes", "-a", "-F", "#{pane_id}")).split("\n");
+    for (const pane of panes) {
+      for (const option of [STATE, HEARTBEAT, OWNER]) {
+        await bridge.run("set-option", "-pqu", "-t", pane, option);
+      }
+    }
+    await bridge.run("set-option", "-gqu", "@opencode_tmux_badge");
+    await bridge.refresh();
+  }
+
   private async run(...args: string[]): Promise<string> {
     const result = await exec("tmux", ["-S", this.target.socket, ...args], { timeout: 2000 });
     return result.stdout.replace(/\r?\n$/, "");

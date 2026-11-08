@@ -107,3 +107,22 @@ test("intentional spacing in existing formats is preserved", async (t) => {
   await bridge.close();
   assert.equal(await f.label(), "  Agents  ");
 });
+
+test("uninstall removes only plugin-owned formatting and pane options", async (t) => {
+  const f = await fixture(t);
+  const base = "#[fg=blue]  #W  ";
+  const local = "LOCAL #I:#W";
+  await f.tmux("set-option", "-gw", "window-status-format", base);
+  await f.tmux("set-option", "-w", "-t", f.pane, "window-status-current-format", local);
+  await f.tmux("set-option", "-p", "-t", f.pane, "@user_setting", "keep me");
+  const bridge = await TmuxStatus.connect({ socket: f.socket, pane: f.pane });
+  await bridge.publish("done");
+  await bridge.close();
+  const target = { socket: f.socket, pane: f.pane };
+  await TmuxStatus.uninstall(target);
+  await TmuxStatus.uninstall(target);
+  assert.equal(await f.tmux("show-options", "-gwqv", "window-status-format"), base);
+  assert.equal(await f.tmux("show-options", "-wqv", "-t", f.pane, "window-status-current-format"), local);
+  assert.equal(await f.tmux("show-options", "-pqv", "-t", f.pane, "@user_setting"), "keep me");
+  assert.equal(await f.tmux("show-options", "-gqv", "@opencode_tmux_badge"), "");
+});

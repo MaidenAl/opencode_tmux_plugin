@@ -2,6 +2,7 @@
   "name": "opencode-tmux-status",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@11.17.0",
   "type": "module",
   "description": "Live per-window tmux indicators for OpenCode V2",
   "exports": {
@@ -10,6 +11,7 @@
   "scripts": {
     "test": "node --test test/*.test.ts",
     "test:runtime": "node --test test/runtime.ts",
+    "tmux:uninstall": "node src/uninstall.ts",
     "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
