@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
-import type { FormInfo, SessionInfo } from "@opencode/client";
+import type { FormInfo, PermissionRequest, SessionInfo } from "@opencode/client";
 
 const exec = promisify(execFile);
 const plugin = fileURLToPath(new URL("../", import.meta.url));
@@ -27,6 +27,7 @@ test("real OpenCode TUI observes execution, child agents, questions, and errors"
   const directory = await mkdtemp("/tmp/opencode/oc-tmux-runtime-");
   const socket = `${directory}/tmux.sock`;
   const workspace = `${directory}/workspace`;
+  const localPlugin = `${directory}/plugin`;
   const pending: ServerResponse[] = [];
   let fail = false;
   const model = createServer(async (request, response) => {
@@ -54,7 +55,7 @@ test("real OpenCode TUI observes execution, child agents, questions, and errors"
     LANG: "C.UTF-8",
     OC_TMUX_TEST_KEY: "local-test-only",
     OPENCODE_CLI_CONFIG_CONTENT: JSON.stringify({
-      plugins: [plugin], attention: { sound: false, notifications: false },
+      plugins: [localPlugin], attention: { sound: false, notifications: false },
       highlights: false, tabs: { mode: "on" },
     }),
   };
@@ -69,9 +70,14 @@ test("real OpenCode TUI observes execution, child agents, questions, and errors"
   for (const path of [workspace, env.HOME, `${env.XDG_CONFIG_HOME}/opencode`, env.XDG_RUNTIME_DIR]) {
     await mkdir(path, { recursive: true, mode: 0o700 });
   }
+  // Verify the distributable alone: no developer node_modules or build output.
+  await mkdir(localPlugin);
+  await cp(`${plugin}/package.json`, `${localPlugin}/package.json`);
+  await cp(`${plugin}/src`, `${localPlugin}/src`, { recursive: true });
   await writeFile(`${env.XDG_CONFIG_HOME}/opencode/opencode.json`, JSON.stringify({
     $schema: "https://opencode.ai/config.json",
     model: "tmux-test/model", update: "disable", snapshots: false,
+    permissions: [{ action: "tmux-test", resource: "*", effect: "ask" }],
     providers: { "tmux-test": {
       env: ["OC_TMUX_TEST_KEY"], package: "@opencode/ai/providers/openai-compatible",
       settings: { baseURL: `http://127.0.0.1:${address.port}/v1` },
@@ -103,9 +109,13 @@ test("real OpenCode TUI observes execution, child agents, questions, and errors"
       return (response.status === 204 ? undefined : (await response.json() as { data: T }).data) as T;
     }
     const root = await api<SessionInfo>("/api/session", "POST", { title: "tmux runtime", location: { directory: workspace } });
-    tuiPane = await tmux("new-window", "-d", "-n", "Agent", "-c", workspace, "-P", "-F", "#{pane_id}",
-      `opencode --server ${base} --session ${root.id}`);
+    tuiPane = await tmux("new-window", "-d", "-n", "Agent", "-c", workspace, "-P", "-F", "#{pane_id}", "/bin/sh");
     const pane = tuiPane;
+    const launch = async () => {
+      await tmux("send-keys", "-t", pane, "-l", `opencode --server ${base} --session ${root.id}`);
+      await tmux("send-keys", "-t", pane, "Enter");
+    };
+    await launch();
     const state = () => tmux("show-options", "-pqv", "-t", pane, "@opencode_tmux_state");
     await until("plugin load and initial idle state", state, (value) => value === "idle");
 
@@ -146,16 +156,44 @@ test("real OpenCode TUI observes execution, child agents, questions, and errors"
     await until("attention cleared", state, (value) => value === "done");
     t.diagnostic("Real pending form: done → attention → done");
 
+    const permission = api(`/api/session/${root.id}/permission`, "POST", {
+      action: "tmux-test", resources: ["local-test-only"],
+    });
+    // Attach a rejection handler immediately while the request waits for its reply.
+    void permission.catch(() => {});
+    const requests = await until("permission request", () => api<PermissionRequest[]>(
+      `/api/session/${root.id}/permission`), (items) => items.length > 0);
+    await until("permission attention", state, (value) => value === "attention");
+    await api(`/api/session/${root.id}/permission/${requests[0].id}/reply`, "POST", { decision: "once" });
+    await permission;
+    await until("permission cleared", state, (value) => value === "done");
+    t.diagnostic("Real permission approval: done → attention → done");
+
     fail = true;
     await api(`/api/session/${root.id}/prompt`, "POST", { text: "Trigger the local test error." });
     await until("failed execution", state, (value) => value === "error");
     t.diagnostic("Real provider failure displays error, not done");
     assert.match(await tmux("display-message", "-p", "-t", pane, "#{T:window-status-format}"), / ✗$/u);
+
+    await tmux("send-keys", "-t", pane, "C-d");
+    await until("normal exit clears pane state", state, (value) => value === "");
+    t.diagnostic("Normal TUI exit removes its pane status");
+
+    await launch();
+    await until("plugin restored after reopening", state, (value) => value === "error");
+    const shellPID = await tmux("display-message", "-p", "-t", pane, "#{pane_pid}");
+    const children = (await exec("ps", ["-o", "pid=,comm=", "--ppid", shellPID])).stdout;
+    const childPID = children.match(/^\s*(\d+)\s+opencode\s*$/m)?.[1];
+    assert.ok(childPID, "Only kill the OpenCode child of this isolated test pane");
+    process.kill(Number(childPID), "SIGKILL");
+    await until("crash lease expires", () => tmux("display-message", "-p", "-t", pane,
+      "#{T:window-status-format}"), (label) => !/[!✓✗⠋⠙⠹⠸]/u.test(label));
+    t.diagnostic("An actual SIGKILL cannot leave a stale window indicator");
   } catch (error) {
-    t.diagnostic(redact(await tmux("capture-pane", "-p", "-t", serverPane).catch(String)));
+    t.diagnostic(redact((await tmux("capture-pane", "-p", "-t", serverPane).catch(String)).slice(-2000)));
     if (tuiPane) t.diagnostic(redact(await tmux("capture-pane", "-p", "-t", tuiPane).catch(String)));
     const log = `${env.XDG_DATA_HOME}/opencode/log/opencode.log`;
-    t.diagnostic(redact((await readFile(log, "utf8").catch(String)).slice(-8000)));
+    t.diagnostic(redact((await readFile(log, "utf8").catch(String)).slice(-2000)));
     throw error;
   }
 });
