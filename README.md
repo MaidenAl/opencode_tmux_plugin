@@ -4,7 +4,7 @@ Automatic, per-window agent indicators for **OpenCode V2**. No hard-coded window
 names, screen scraping, monitoring daemon, or model/API calls.
 
 ```text
-1:Gw ⠋    3:Cliff ✓    4:Terminal !
+⠋1:Gw    ✓3:Cliff    !4:Terminal
 ```
 
 | Indicator | Meaning |
@@ -71,12 +71,13 @@ five seconds **at the next status redraw** (up to your `status-interval` later).
 Dead panes are excluded immediately. Hot-reload ownership prevents an old
 instance's cleanup from clearing a new instance's status.
 
-The plugin appends `#{T:@opencode_tmux_badge}` to the global
+The plugin prepends `#{T:@opencode_tmux_badge}` to the global
 `window-status-format` and `window-status-current-format`, and to existing local
 overrides when needed. Window names, existing formatting/spacing, colors,
 `status-interval`, and your config files are not changed. Theme reloads are
 picked up on the next heartbeat. A custom status bar that bypasses tmux's normal
-window-status formats needs its own integration.
+window-status formats needs its own integration. The icon has no added space
+before the window number; existing trailing indicators are migrated automatically.
 
 ## Disable / remove
 

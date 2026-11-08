@@ -3,7 +3,7 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { test, type TestContext } from "node:test";
 import { promisify } from "node:util";
-import { TmuxStatus, targetFromEnvironment, FORMAT_SUFFIX, LEASE_SECONDS } from "../src/tmux.ts";
+import { TmuxStatus, targetFromEnvironment, FORMAT_TOKEN, LEASE_SECONDS } from "../src/tmux.ts";
 
 const exec = promisify(execFile);
 
@@ -42,12 +42,12 @@ test("formats preserve names/styles, install once, and stay blank in unrelated w
   const bridge = await TmuxStatus.connect({ socket: f.socket, pane: f.pane });
   assert.equal(await f.label(), "#[fg=blue]0:Agents*");
   await bridge.publish("done");
-  assert.match(await f.label(), /Agents\* ✓$/u);
+  assert.equal(await f.label(), "✓#[fg=blue]0:Agents*");
   assert.equal(await f.tmux("display-message", "-p", "-t", f.pane,
-    "#{T:window-status-current-format}"), "LOCAL Agents ✓");
+    "#{T:window-status-current-format}"), "✓LOCAL Agents");
   await bridge.publish("working");
-  assert.match(await f.label(), / [⠋⠙⠹⠸]$/u);
-  assert.equal(await f.tmux("show-options", "-gwqv", "window-status-format"), base + FORMAT_SUFFIX);
+  assert.match(await f.label(), /^[⠋⠙⠹⠸]#\[fg=blue\]0:Agents\*$/u);
+  assert.equal(await f.tmux("show-options", "-gwqv", "window-status-format"), FORMAT_TOKEN + base);
   const other = await f.tmux("new-window", "-d", "-n", "Unrelated", "-P", "-F", "#{pane_id}", "sleep 300");
   assert.equal(await f.label(other), "#[fg=blue]1:Unrelated");
   await bridge.close();
@@ -61,15 +61,15 @@ test("every pane contributes and indicators automatically follow pane moves", as
   const secondBridge = await TmuxStatus.connect({ socket: f.socket, pane: second });
   await firstBridge.publish("done");
   await secondBridge.publish("working");
-  assert.match(await f.label(), / [⠋⠙⠹⠸]$/u);
+  assert.match(await f.label(), /^[⠋⠙⠹⠸]0:Agents/u);
   await secondBridge.publish("attention");
-  assert.match(await f.label(), / !$/u);
+  assert.match(await f.label(), /^!0:Agents/u);
   const destination = await f.tmux("new-window", "-d", "-n", "Moved", "-P", "-F", "#{pane_id}", "sleep 300");
   await f.tmux("join-pane", "-d", "-s", second, "-t", destination);
-  assert.match(await f.label(), / ✓$/u);
-  assert.match(await f.label(destination), /Moved.* !$/u);
+  assert.match(await f.label(), /^✓0:Agents/u);
+  assert.match(await f.label(destination), /^!1:Moved/u);
   await f.tmux("rename-window", "-t", destination, "Renamed");
-  assert.match(await f.label(destination), /Renamed.* !$/u);
+  assert.match(await f.label(destination), /^!1:Renamed/u);
   await secondBridge.close();
   assert.doesNotMatch(await f.label(destination), /[!✓⠋⠙⠹⠸]/u);
   await firstBridge.close();
@@ -93,7 +93,7 @@ test("old plugin cleanup cannot erase a replacement plugin's status", async (t) 
   const replacement = await TmuxStatus.connect({ socket: f.socket, pane: f.pane });
   await replacement.publish("error");
   await old.close();
-  assert.match(await f.label(), / ✗$/u);
+  assert.match(await f.label(), /^✗0:Agents/u);
   await replacement.close();
 });
 
@@ -103,9 +103,24 @@ test("intentional spacing in existing formats is preserved", async (t) => {
   await f.tmux("set-option", "-gw", "window-status-format", base);
   const bridge = await TmuxStatus.connect({ socket: f.socket, pane: f.pane });
   await bridge.publish("done");
-  assert.equal(await f.label(), "  Agents   ✓");
+  assert.equal(await f.label(), "✓  Agents  ");
   await bridge.close();
   assert.equal(await f.label(), "  Agents  ");
+});
+
+test("existing trailing indicators migrate to a single compact prefix", async (t) => {
+  const f = await fixture(t);
+  const token = "#{T:@opencode_tmux_badge}";
+  await f.tmux("set-option", "-gw", "window-status-format", "#I:#W" + token);
+  await f.tmux("set-option", "-w", "-t", f.pane, "window-status-current-format", "#I:#W" + token);
+  const bridge = await TmuxStatus.connect({ socket: f.socket, pane: f.pane });
+  await bridge.publish("done");
+  await bridge.publish("done");
+  assert.equal(await f.label(), "✓0:Agents");
+  assert.equal(await f.tmux("display-message", "-p", "-t", f.pane,
+    "#{T:window-status-current-format}"), "✓0:Agents");
+  assert.equal(await f.tmux("show-options", "-gwqv", "window-status-format"), token + "#I:#W");
+  await bridge.close();
 });
 
 test("uninstall removes only plugin-owned formatting and pane options", async (t) => {

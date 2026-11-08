@@ -6,7 +6,7 @@ import type { Status } from "./status.ts";
 
 const exec = promisify(execFile);
 export const LEASE_SECONDS = 5;
-export const FORMAT_SUFFIX = "#{T:@opencode_tmux_badge}";
+export const FORMAT_TOKEN = "#{T:@opencode_tmux_badge}";
 const STATE = "@opencode_tmux_state";
 const HEARTBEAT = "@opencode_tmux_heartbeat";
 const OWNER = "@opencode_tmux_owner";
@@ -16,7 +16,7 @@ const liveStates = `#{P:#{?#{&&:#{!=:#{pane_dead},1},#{e|>=:#{${HEARTBEAT}},#{e|
 const spinner = "#{?#{==:#{e|%%:%s,4},0},⠋,#{?#{==:#{e|%%:%s,4},1},⠙,#{?#{==:#{e|%%:%s,4},2},⠹,⠸}}}";
 const BADGE = [
   ["done", "✓"], ["error", "✗"], ["working", spinner], ["attention", "!"],
-].reduce((rest, [status, icon]) => `#{?#{m:*${status}*,${liveStates}}, ${icon},${rest}}`, "");
+].reduce((rest, [status, icon]) => `#{?#{m:*${status}*,${liveStates}},${icon},${rest}}`, "");
 
 export interface TmuxTarget {
   socket: string;
@@ -57,8 +57,8 @@ export class TmuxStatus {
     for (const scope of scopes) {
       for (const option of ["window-status-format", "window-status-current-format"]) {
         const format = await bridge.run("show-options", ...scope, "-qv", option);
-        if (format.includes(FORMAT_SUFFIX)) {
-          await bridge.run("set-option", ...scope, option, format.replaceAll(FORMAT_SUFFIX, ""));
+        if (format.includes(FORMAT_TOKEN)) {
+          await bridge.run("set-option", ...scope, option, format.replaceAll(FORMAT_TOKEN, ""));
         }
       }
     }
@@ -85,8 +85,9 @@ export class TmuxStatus {
         const format = await this.run("show-options", scope, "-qv", ...target, option);
         // An absent local override must keep inheriting the global theme.
         if (scope === "-w" && !format) continue;
-        if (!format.includes(FORMAT_SUFFIX)) {
-          await this.run("set-option", scope, ...target, option, format + FORMAT_SUFFIX);
+        const updated = FORMAT_TOKEN + format.replaceAll(FORMAT_TOKEN, "");
+        if (format !== updated) {
+          await this.run("set-option", scope, ...target, option, updated);
         }
       }
     }

@@ -173,7 +173,7 @@ test("real OpenCode TUI observes execution, child agents, questions, and errors"
     await api(`/api/session/${root.id}/prompt`, "POST", { text: "Trigger the local test error." });
     await until("failed execution", state, (value) => value === "error");
     t.diagnostic("Real provider failure displays error, not done");
-    assert.match(await tmux("display-message", "-p", "-t", pane, "#{T:window-status-format}"), / ✗$/u);
+    assert.match(await tmux("display-message", "-p", "-t", pane, "#{T:window-status-format}"), /^✗\d+:Agent/u);
 
     await tmux("send-keys", "-t", pane, "C-d");
     await until("normal exit clears pane state", state, (value) => value === "");
