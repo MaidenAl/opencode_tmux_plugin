@@ -188,6 +188,9 @@ test("real OpenCode TUI observes execution, child agents, questions, and errors"
     await until("normal exit clears pane state", state, (value) => value === "");
     t.diagnostic("Normal TUI exit removes its pane status");
 
+    // Plugin cleanup precedes TUI exit; do not send the next launch to the old TUI.
+    await until("shell regains the pane", () => tmux("display-message", "-p", "-t", pane,
+      "#{pane_current_command}"), (command) => command === "sh");
     await launch();
     await until("plugin restored after reopening", state, (value) => value === "error");
     const shellPID = await tmux("display-message", "-p", "-t", pane, "#{pane_pid}");
