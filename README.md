@@ -1,11 +1,18 @@
-# OpenCode tmux status
+# OpenCode tmux Plugin
+
+[![CI](https://github.com/MaidenAl/opencode_tmux_plugin/actions/workflows/ci.yml/badge.svg)](https://github.com/MaidenAl/opencode_tmux_plugin/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 Automatic, per-window agent indicators for **OpenCode V2**. No hard-coded window
 names, screen scraping, monitoring daemon, or model/API calls.
 
 ```text
-⠋1:Gw    ✓3:Cliff    !4:Terminal
+⠋1:Backend    ✓2:Frontend    !3:Review    ✗4:Tests
 ```
+
+See which OpenCode windows are working, finished, or waiting for you without
+switching panes. Indicators follow pane moves and window renames, include
+background subagents, and preserve your existing tmux theme.
 
 | Indicator | Meaning |
 | --- | --- |
@@ -18,21 +25,39 @@ names, screen scraping, monitoring daemon, or model/API calls.
 Priority is **attention → working → error → done**. A checkmark means the run
 ended, not that its work is correct or its tests passed.
 
-## Enable
+## Quick start
 
 Tested with **OpenCode 2.2.6** and **tmux 3.5a on Linux**. The plugin runs in
 OpenCode itself: no build step, npm installation, or separate Node process is
 needed to use it.
 
-Add this folder to the existing `plugins` array in
+### 1. Clone the plugin
+
+```sh
+git clone https://github.com/MaidenAl/opencode_tmux_plugin.git "$HOME/.local/share/opencode_tmux_plugin"
+```
+
+This is a source installation; the plugin is **not published to npm**. Keep the
+clone in place while using it. A Unicode-capable terminal font is needed for the
+spinner and status symbols. Other OpenCode/tmux versions and operating systems
+have not been verified.
+
+### 2. Enable it in OpenCode
+
+Add the clone's **absolute path** to the existing `plugins` array in
 `~/.config/opencode/cli.json` (or `$XDG_CONFIG_HOME/opencode/cli.json`):
 
 ```json
 {
   "$schema": "https://opencode.ai/v2/cli.json",
-  "plugins": ["/home/alavi/repos/opencode_tmux"]
+  "plugins": ["/home/YOUR_USERNAME/.local/share/opencode_tmux_plugin"]
 }
 ```
+
+Replace `/home/YOUR_USERNAME` with your home directory (for example,
+`/Users/YOUR_USERNAME` on macOS); the JSON example is not a literal install path.
+Use `printf '%s\n' "$HOME/.local/share/opencode_tmux_plugin"` to print yours.
+Do not rely on shell variables or `~` being expanded inside JSON.
 
 **Merge the entry; do not replace your other settings or plugins.** CLI config
 reloads automatically; `/reload` can force a reload. No server restart is needed.
@@ -40,6 +65,14 @@ Launch OpenCode normally inside tmux. Outside tmux, this plugin does nothing.
 
 Enabling it here applies globally for your user; no project configuration is
 necessary.
+
+### Updating
+
+```sh
+git -C "$HOME/.local/share/opencode_tmux_plugin" pull --ff-only
+```
+
+Then run `/reload` in each running OpenCode TUI to load the updated plugin.
 
 ## What is tracked
 
@@ -93,13 +126,32 @@ before the window number; existing trailing indicators are migrated automaticall
    server, with Node.js 24 installed:
 
    ```sh
-   cd /home/alavi/repos/opencode_tmux
+   cd "$HOME/.local/share/opencode_tmux_plugin"
    npm run tmux:uninstall
    ```
 
 The removal command touches only this plugin's format reference and namespaced
 options; it preserves the rest of your formatting. Nothing is persisted in
 `.tmux.conf`, so restarting a tmux server also clears the integration.
+
+## Troubleshooting
+
+- **No indicator:** launch OpenCode inside tmux and check that the absolute path
+  in `cli.json` points to the clone containing `package.json`. Idle sessions have
+  no indicator; start an execution to check it. tmux must be on `PATH`.
+- **A custom status bar hides indicators:** themes that bypass tmux's standard
+  window-status formats must include `#{T:@opencode_tmux_badge}` themselves.
+- **Symbols are missing or misaligned:** use a terminal font with the Unicode
+  braille and checkmark/cross glyphs used above.
+- **An indicator briefly remains after a crash:** leases expire after five
+  seconds, but the visible bar clears only at the next tmux status redraw.
+- **“Could not update tmux status” warning:** check the tmux server/socket is
+  reachable from the TUI. If indicators do not resume after restoring the
+  connection, run `/reload` to reconnect the plugin.
+
+For other problems, [open an issue](https://github.com/MaidenAl/opencode_tmux_plugin/issues/new/choose)
+with your OpenCode, tmux, Node.js, and OS versions. Never include credentials or
+private prompts in logs.
 
 ## Development / verification
 
@@ -109,6 +161,7 @@ Dependency lifecycle scripts are disabled by `.npmrc`.
 
 ```sh
 npm ci
+mkdir -p /tmp/opencode
 npm test
 npm run typecheck
 npm run test:runtime
@@ -127,6 +180,37 @@ npm run test:runtime
   personal credentials or paid models** and removes its own test environment.
 
 See [SECURITY.md](SECURITY.md) for the development dependency audit.
+
+GitHub Actions runs type checking, unit/tmux integration tests, and a dependency
+audit on pushes and pull requests. The real OpenCode runtime test is a separate
+local check; CI does not install or launch OpenCode. There is no build step or
+separate lint command.
+
+## Project structure
+
+```text
+src/
+  tui.ts          OpenCode plugin entrypoint and reactive lifecycle
+  view.ts         Open tabs and session-family selection
+  status.ts       Pure session-to-indicator state reduction
+  tmux.ts         Pane leases, window formats, animation, and cleanup
+  uninstall.ts    Explicit removal of plugin-owned tmux state
+test/
+  *.test.ts       Unit tests and isolated tmux integration tests
+  runtime.ts      End-to-end test with real OpenCode and a local mock model
+.github/          CI workflow and contribution templates
+```
+
+## Contributing
+
+Bug reports, documentation fixes, and focused pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, and test isolation details.
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+[MIT](LICENSE) © 2026 Mohammad Alavi. This is an independent community plugin,
+not an official OpenCode or tmux project.
 
 ## Sources
 

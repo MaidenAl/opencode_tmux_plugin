@@ -5,6 +5,17 @@
   "packageManager": "npm@11.17.0",
   "type": "module",
   "description": "Live per-window tmux indicators for OpenCode V2",
+  "license": "MIT",
+  "author": "Mohammad Alavi",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MaidenAl/opencode_tmux_plugin.git"
+  },
+  "homepage": "https://github.com/MaidenAl/opencode_tmux_plugin#readme",
+  "bugs": {
+    "url": "https://github.com/MaidenAl/opencode_tmux_plugin/issues"
+  },
+  "keywords": ["opencode", "tmux", "plugin", "terminal", "status"],
   "exports": {
     "./tui": "./src/tui.ts"
   },

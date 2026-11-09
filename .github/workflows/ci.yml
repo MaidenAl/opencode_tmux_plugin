@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, tests, and audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Use the project's npm version
+        run: npm install --global npm@11.17.0 --ignore-scripts
+      - name: Install test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes tmux util-linux
+          mkdir -p /tmp/opencode
+      - name: Install dependencies without lifecycle scripts
+        run: npm ci --ignore-scripts
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit and tmux integration tests
+        run: npm test
+      # Moderate SDK development-dependency advisories are tracked in SECURITY.md.
+      - name: Audit dependencies for high and critical vulnerabilities
+        run: npm audit --audit-level=high
+      - name: Audit runtime dependencies
+        run: npm audit --omit=dev

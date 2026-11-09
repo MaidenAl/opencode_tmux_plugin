@@ -1,4 +1,12 @@
 node_modules/
 coverage/
+dist/
 .env
+.env.*
+!.env.example
 *.log
+*.pem
+*.key
+.DS_Store
+.idea/
+.vscode/

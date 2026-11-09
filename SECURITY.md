@@ -1,5 +1,19 @@
 # Security notes
 
+## Reporting a vulnerability
+
+Please do not post suspected vulnerabilities, credentials, or private session
+data in public issues. Use GitHub's
+[private vulnerability reporting](https://github.com/MaidenAl/opencode_tmux_plugin/security/advisories/new)
+to share a description, affected version or commit, impact, and minimal
+reproduction steps. Redact any logs before sending them.
+
+Security fixes target the latest code on `main`; older snapshots are not
+maintained separately. This is a community project with no guaranteed response
+time. Ordinary bugs can be reported through the issue tracker.
+
+## Data handling and test isolation
+
 The plugin publishes only a fixed state, spinner glyph, heartbeat timestamp,
 and owner token to its own tmux socket. It does not read agent transcripts, access credentials,
 call a model, or send telemetry. Pane IDs/statuses are validated; subprocesses
@@ -12,7 +26,7 @@ tmux sockets, redact passwords from diagnostics, and allow only the test model.
 Cleanup targets directories/sockets created by that test invocation, never an
 inherited tmux server or the user's OpenCode database.
 
-## Dependency audit — 2026-11-08
+## Dependency audit — 2026-11-09
 
 `npm audit` against the lockfile reports **0 critical, 0 high, 24 moderate**
 findings, counting affected transitive packages. The underlying advisories are:
